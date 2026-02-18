@@ -144,20 +144,17 @@ def detect_losses_from_summary(path: Path, stride: int) -> list[int]:
 def plot_speed(runs: dict[str, Path], loss_steps: list[int], spare_steps: list[int], stride: int, output_tag: str):
     plt.figure(figsize=FIG_SIZE)
     labels = list(runs.keys())
-    n = len(labels)
-    span = max(1, get_last_step(runs[labels[0]]))
-    units_per_px = span / (FIG_SIZE[0] * DPI)
-    bar_w = max(0.2, 0.1 * stride, MIN_BAR_PX_DEFAULT * units_per_px)
-    offset_scale = 1.1
     force = set(loss_steps)
     for idx, label in enumerate(labels):
         data = load_summary(runs[label], stride, force)
-        x = [r["step"] + (idx - (n - 1) / 2) * bar_w * offset_scale for r in data]
-        x_line = [r["step"] for r in data]
+        x = [r["step"] for r in data]
         y = [r["mean_v"] for r in data]
-        yerr = [r["std_v"] for r in data]
-        plt.plot(x_line, y, color=COLORS[label], label=f"{label} avg v")
-        plt.bar(x, yerr, width=bar_w, alpha=0.35, color=COLORS[label], label=f"{label} std v")
+        ystd = [r["std_v"] for r in data]
+        lower = [m - s for m, s in zip(y, ystd)]
+        upper = [m + s for m, s in zip(y, ystd)]
+        plt.plot(x, y, color=COLORS[label], linewidth=1.6, label=f"{label} avg v")
+        band_label = "±1σ" if idx == 0 else None
+        plt.fill_between(x, lower, upper, color=COLORS[label], alpha=0.20, linewidth=0, label=band_label)
     for s in loss_steps:
         plt.axvline(s, color="red", linestyle="--", linewidth=2.0, alpha=0.9, zorder=5)
     if loss_steps:
@@ -168,7 +165,7 @@ def plot_speed(runs: dict[str, Path], loss_steps: list[int], spare_steps: list[i
         plt.axvline(spare_steps[0], color="darkgreen", linestyle="-", linewidth=2.0, alpha=0.9, zorder=4, label="spare")
     plt.xlabel("step")
     plt.ylabel("speed (m/s)")
-    plt.title(f"Speed: avg line, std bars (every {stride} steps)")
+    plt.title(f"Speed: mean line, ±1σ band (every {stride} steps)")
     plt.legend()
     plt.tight_layout()
     suffix = f"_{output_tag}" if output_tag else ""
@@ -179,20 +176,17 @@ def plot_speed(runs: dict[str, Path], loss_steps: list[int], spare_steps: list[i
 def plot_gap(runs: dict[str, Path], loss_steps: list[int], spare_steps: list[int], stride: int, output_tag: str):
     plt.figure(figsize=FIG_SIZE)
     labels = list(runs.keys())
-    n = len(labels)
-    span = max(1, get_last_step(runs[labels[0]]))
-    units_per_px = span / (FIG_SIZE[0] * DPI)
-    bar_w = max(0.2, 0.1 * stride, MIN_BAR_PX_DEFAULT * units_per_px)
-    offset_scale = 1.1
     force = set(loss_steps)
     for idx, label in enumerate(labels):
         data = load_summary(runs[label], stride, force)
-        x = [r["step"] + (idx - (n - 1) / 2) * bar_w * offset_scale for r in data]
-        x_line = [r["step"] for r in data]
-        y_mean = [r["mean_gap"] for r in data]
-        yerr = [r["std_gap"] for r in data]
-        plt.plot(x_line, y_mean, color=COLORS[label], linewidth=1.6, label=f"{label} mean gap")
-        plt.bar(x, yerr, width=bar_w, alpha=0.35, color=COLORS[label], label=f"{label} std gap")
+        x = [r["step"] for r in data]
+        y = [r["mean_gap"] for r in data]
+        ystd = [r["std_gap"] for r in data]
+        lower = [m - s for m, s in zip(y, ystd)]
+        upper = [m + s for m, s in zip(y, ystd)]
+        plt.plot(x, y, color=COLORS[label], linewidth=1.6, label=f"{label} mean gap")
+        band_label = "±1σ" if idx == 0 else None
+        plt.fill_between(x, lower, upper, color=COLORS[label], alpha=0.20, linewidth=0, label=band_label)
     for s in loss_steps:
         plt.axvline(s, color="red", linestyle="--", linewidth=2.0, alpha=0.9, zorder=5)
     if loss_steps:
@@ -203,11 +197,46 @@ def plot_gap(runs: dict[str, Path], loss_steps: list[int], spare_steps: list[int
         plt.axvline(spare_steps[0], color="darkgreen", linestyle="-", linewidth=2.0, alpha=0.9, zorder=4, label="spare")
     plt.xlabel("step")
     plt.ylabel("gap (m)")
-    plt.title(f"Gap: mean line, std bars (every {stride} steps)")
+    plt.title(f"Gap: mean line, ±1σ band (every {stride} steps)")
     plt.legend()
     plt.tight_layout()
     suffix = f"_{output_tag}" if output_tag else ""
     plt.savefig(BASE / f"plot_gap_backpressure{suffix}.png", dpi=DPI)
+    plt.close()
+
+
+def plot_gap_std_only(runs: dict[str, Path], loss_steps: list[int], spare_steps: list[int], stride: int, output_tag: str):
+    """Simplified view: plot only std(gap) vs time.
+
+    In the seeded backpressure runs, mean_gap is nearly identical across k,
+    while std_gap differentiates the controllers. This plot makes that visible.
+    """
+
+    plt.figure(figsize=FIG_SIZE)
+    labels = list(runs.keys())
+    force = set(loss_steps)
+    for label in labels:
+        data = load_summary(runs[label], stride, force)
+        x = [r["step"] for r in data]
+        y = [r["std_gap"] for r in data]
+        plt.plot(x, y, color=COLORS[label], linewidth=1.8, label=f"{label} std(gap)")
+
+    for s in loss_steps:
+        plt.axvline(s, color="red", linestyle="--", linewidth=2.0, alpha=0.9, zorder=5)
+    if loss_steps:
+        plt.axvline(loss_steps[0], color="red", linestyle="--", linewidth=2.0, alpha=0.9, zorder=5, label="loss")
+    for s in spare_steps:
+        plt.axvline(s, color="darkgreen", linestyle="-", linewidth=2.0, alpha=0.9, zorder=4)
+    if spare_steps:
+        plt.axvline(spare_steps[0], color="darkgreen", linestyle="-", linewidth=2.0, alpha=0.9, zorder=4, label="spare")
+
+    plt.xlabel("step")
+    plt.ylabel("std gap (m)")
+    plt.title(f"Backpressure: std(gap) only (every {stride} steps)")
+    plt.legend()
+    plt.tight_layout()
+    suffix = f"_{output_tag}" if output_tag else ""
+    plt.savefig(BASE / f"plot_gap_backpressure_std{suffix}.png", dpi=DPI)
     plt.close()
 
 
@@ -248,6 +277,7 @@ def main():
     spare_steps = sorted(spare_union)
     plot_speed(runs, loss_steps, spare_steps, stride, args.output_tag)
     plot_gap(runs, loss_steps, spare_steps, stride, args.output_tag)
+    plot_gap_std_only(runs, loss_steps, spare_steps, stride, args.output_tag)
 
 
 if __name__ == "__main__":

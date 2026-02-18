@@ -1,0 +1,6 @@
+perimeter,num_drones,v_nominal,v_max,sensing_radius,nominal_spacing,balancing_policy,density_threshold,speed_threshold,adaptation_window,failure_rate,num_failures,failure_distribution
+100.0,20,1.0,2.0,5.0,5.0,3,0.80,1.5,10.0,0.010,2,0
+100.0,25,1.0,2.0,5.0,4.0,3,0.80,1.5,10.0,0.010,3,0
+100.0,30,1.0,2.0,6.0,3.33,3,0.80,1.5,10.0,0.010,3,0
+150.0,30,1.0,2.0,6.0,5.0,3,0.80,1.5,10.0,0.012,3,0
+150.0,40,1.0,2.0,6.0,3.75,3,0.80,1.5,10.0,0.015,4,0

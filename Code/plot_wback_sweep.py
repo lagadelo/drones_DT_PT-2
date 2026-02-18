@@ -126,20 +126,18 @@ def plot_metric(mean_key: str, std_key: str, ylabel: str, title: str, output_nam
         spare_union.update(load_spare_steps(trace_path))
     spare_steps = sorted(spare_union)
     plt.figure(figsize=FIG_SIZE)
-    span = max(1, get_last_step(VARIANTS[0][1]))
-    units_per_px = span / (FIG_SIZE[0] * DPI)
-    bar_w = max(0.2, 0.1 * stride, MIN_BAR_PX * units_per_px)
-    offset_scale = 1.1
     force = set(loss_steps)
     for idx, (label, summary_path, _) in enumerate(VARIANTS):
         data = load_summary(summary_path, stride, force)
-        x = [r["step"] + (idx - (len(VARIANTS) - 1) / 2) * bar_w * offset_scale for r in data]
-        x_line = [r["step"] for r in data]
+        x = [r["step"] for r in data]
         y = [r[mean_key] for r in data]
-        yerr = [r[std_key] for r in data]
+        ystd = [r[std_key] for r in data]
+        lower = [m - s for m, s in zip(y, ystd)]
+        upper = [m + s for m, s in zip(y, ystd)]
         color = COLORS[idx % len(COLORS)]
-        plt.plot(x_line, y, color=color, linewidth=1.6, label=label)
-        plt.bar(x, yerr, width=bar_w, alpha=0.35, color=color, label=f"{label} std")
+        plt.plot(x, y, color=color, linewidth=1.6, label=label)
+        band_label = "±1σ" if idx == 0 else None
+        plt.fill_between(x, lower, upper, color=color, alpha=0.20, linewidth=0, label=band_label)
     for s in loss_steps:
         plt.axvline(s, color="red", linestyle="--", linewidth=2.0, alpha=0.9, zorder=5)
     if loss_steps:
@@ -150,7 +148,7 @@ def plot_metric(mean_key: str, std_key: str, ylabel: str, title: str, output_nam
         plt.axvline(spare_steps[0], color="darkgreen", linestyle="-", linewidth=2.0, alpha=0.9, zorder=4, label="spare")
     plt.xlabel("step")
     plt.ylabel(ylabel)
-    plt.title(f"{title} (stride {stride})")
+    plt.title(f"{title}: mean line, ±1σ band (stride {stride})")
     plt.legend()
     plt.tight_layout()
     plt.savefig(BASE / output_name, dpi=DPI)

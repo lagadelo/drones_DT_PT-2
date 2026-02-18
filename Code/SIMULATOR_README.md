@@ -18,13 +18,20 @@ This C-based simulator implements the distributed drone swarm architecture descr
 For the baseline/resilience runs driven by `sample_scenario_w*_seed.cfg`:
 
 - `steps`: simulation steps (e.g., 3000)
+- `n` (legacy): initial active drones (equivalent to `n_initial` when `n_total` is absent)
+- `n_initial`: drones initially active (default: `n`)
+- `n_total`: total drone slots including standby spares (default: `n_initial`)
 - `num_losses`: max losses to generate if the loss file is absent (e.g., 15)
 - `seed`: RNG seed for loss schedule generation
 - `resilience`: 1 to enable spare insertion, 0 to disable
 - `min_spare_delay_steps`: minimum steps between a loss and the next spare insertion (e.g., 15)
+- `min_spare_interval_steps`: legacy fixed minimum steps between two spare insertions
+- `spare_interval_min_steps`, `spare_interval_max_steps`: preferred randomized delay range (in steps) between spare insertions (e.g., 200..500)
+- `max_spares`: hard cap on total spares inserted (0 => defaults to `num_losses`)
+- `extra_spares`: allow inserting more spares than observed losses (antifragility), only after the first loss
 - `k_sym` (or legacy `w_back`), `k_rep`, `k_sym_rec`, `k_f`, `k_b`, `k_f_rec`, `k_b_rec`, `alpha`, `beta`, `V_cap`, `Vmax`, `V`, `d_star`, `d_safe`, `epsilon`, `dt`, `perimeter`, `n`: control/geometry constants. The local law is now symmetric: $v \leftarrow V + k_{sym} (d_f - d_b)$ with repulsion when $d_b < d_{safe}$ and caps at $V_{cap}$ during recovery.
 
-Spare behavior: inserted at the midpoint of the largest gap after the delay; capped to observed losses and `num_losses`; each spare runs at nominal speed `V` for `incoming_hold_steps` before joining the controller (flagged as `INCOMING` in traces).
+Spare behavior: inserted at the midpoint of the largest gap after the delay; cannot occur before the first loss; capped by `max_spares` and by `observed_losses + extra_spares`; each spare runs at regulated speed `incoming_v` for `incoming_hold_steps` before joining the controller (flagged as `INCOMING` in traces).
 
 ## Input CSV Format
 

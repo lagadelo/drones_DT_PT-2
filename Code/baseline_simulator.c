@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdint.h>
 
 /* Baseline local spacing control (Algorithm~\ref{alg:baseline} in methodology.tex)
  * - Inputs: simple key=value scenario file + CSV losses
@@ -9,7 +10,8 @@
  */
 
 typedef struct {
-    int n;
+    int n_initial;          /* drones initially active */
+    int n_total;            /* total slots including standby spares */
     double perimeter;
     double V;
     double Vmax;
@@ -24,17 +26,35 @@ typedef struct {
     double epsilon;
     int steps;
     double dt;
-    int num_losses;
+    int num_losses;         /* used for auto-generating a loss schedule (if needed) */
     unsigned int seed;
     int resilience; /* enable spare insertion up to num_losses, only after losses */
     int min_spare_delay_steps; /* minimum steps after a loss before inserting a spare */
+    int min_spare_interval_steps; /* minimum steps between two spare insertions */
+    int spare_interval_min_steps; /* optional: min steps between two spare insertions (range) */
+    int spare_interval_max_steps; /* optional: max steps between two spare insertions (range) */
     int incoming_hold_steps;   /* steps a new spare stays at nominal speed */
+    double incoming_v;          /* regulated speed during incoming_hold_steps (defaults to V) */
+    int extra_spares;           /* allow inserting more than observed losses (antifragility), only after first loss */
+    int max_spares;             /* hard cap on total spares inserted (0 => defaults to num_losses) */
+
+    /* Fresh-start experiment knobs (kept optional; legacy behavior is default) */
+    int controller_mode;        /* 0=legacy, 1=simple-midpoint, 2=variantA-weighted-gain, 3=variantC-relax-to-nominal */
+    double variantA_gamma;      /* gain amplification vs imbalance (variant A) */
+    double balanced_gap_eps;    /* gap delta threshold (m) for being considered balanced (variant C) */
+    double speed_relax_rate;    /* 0..1 per-step relaxation toward target (variant C) */
+
+    int loss_to_spare_delay_min_steps; /* optional: random delay after loss before allowing spare insertion */
+    int loss_to_spare_delay_max_steps;
+    double preventive_spares_frac;     /* optional: maintain +floor(frac*n_initial) extra drones deployed */
+    int preventive_spares;             /* derived/cached */
 } Scenario;
 
 typedef struct {
     double s;      /* curvilinear position on perimeter */
     double v;      /* current speed */
     int alive;     /* 1 alive, 0 failed */
+    int ever_deployed; /* 1 once activated at least once; distinguishes standby from failed */
     int mode;      /* 0=BASELINE, 1=INCOMING (unused in this minimal build) */
     int incoming_timer; /* steps remaining at fixed speed when incoming */
     double gap_f;  /* front gap (computed per step) */
@@ -54,15 +74,67 @@ static int parse_loss_line(const char *line, int *step, int *idx) {
     return 1;
 }
 
+static void trim_inplace(char *s) {
+    if (!s) return;
+    size_t len = strlen(s);
+    while (len > 0 && (s[len - 1] == ' ' || s[len - 1] == '\t' || s[len - 1] == '\r' || s[len - 1] == '\n')) {
+        s[len - 1] = '\0';
+        len--;
+    }
+    size_t start = 0;
+    while (s[start] == ' ' || s[start] == '\t') start++;
+    if (start > 0) memmove(s, s + start, strlen(s + start) + 1);
+}
+
+static void strip_inline_comment(char *line) {
+    if (!line) return;
+    char *hash = strchr(line, '#');
+    if (hash) *hash = '\0';
+    char *slashes = strstr(line, "//");
+    if (slashes) *slashes = '\0';
+}
+
+static uint32_t rng_xorshift32(uint32_t *state) {
+    uint32_t x = *state;
+    if (x == 0) x = 0x6d2b79f5u;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    *state = x;
+    return x;
+}
+
+static int rng_uniform_int(uint32_t *state, int min_incl, int max_incl) {
+    if (max_incl < min_incl) {
+        int tmp = min_incl;
+        min_incl = max_incl;
+        max_incl = tmp;
+    }
+    if (min_incl == max_incl) return min_incl;
+    uint32_t span = (uint32_t)(max_incl - min_incl + 1);
+    uint32_t r = rng_xorshift32(state);
+    return min_incl + (int)(r % span);
+}
+
 static int read_scenario(const char *path, Scenario *s) {
     FILE *f = fopen(path, "r");
     if (!f) return -1;
     char line[256];
     while (fgets(line, sizeof(line), f)) {
+        strip_inline_comment(line);
+        trim_inplace(line);
+        if (line[0] == '\0') continue;
         char key[64];
         double val;
-        if (sscanf(line, "%63[^=]=%lf", key, &val) == 2) {
-            if (strcmp(key, "n") == 0) s->n = (int)val;
+        if (sscanf(line, " %63[^=]= %lf", key, &val) == 2) {
+            trim_inplace(key);
+            if (strcmp(key, "n") == 0) {
+                int n = (int)val;
+                if (s->n_initial <= 0) s->n_initial = n;
+                if (s->n_total <= 0) s->n_total = n;
+            }
+            else if (strcmp(key, "n_initial") == 0) s->n_initial = (int)val;
+            else if (strcmp(key, "n_total") == 0) s->n_total = (int)val;
             else if (strcmp(key, "perimeter") == 0) s->perimeter = val;
             else if (strcmp(key, "V") == 0) s->V = val;
             else if (strcmp(key, "Vmax") == 0) s->Vmax = val;
@@ -86,10 +158,62 @@ static int read_scenario(const char *path, Scenario *s) {
             else if (strcmp(key, "seed") == 0) s->seed = (unsigned int)val;
             else if (strcmp(key, "resilience") == 0) s->resilience = (int)val;
             else if (strcmp(key, "min_spare_delay_steps") == 0) s->min_spare_delay_steps = (int)val;
+            else if (strcmp(key, "min_spare_interval_steps") == 0) s->min_spare_interval_steps = (int)val;
+            else if (strcmp(key, "spare_interval_min_steps") == 0) s->spare_interval_min_steps = (int)val;
+            else if (strcmp(key, "spare_interval_max_steps") == 0) s->spare_interval_max_steps = (int)val;
             else if (strcmp(key, "incoming_hold_steps") == 0) s->incoming_hold_steps = (int)val;
+            else if (strcmp(key, "incoming_v") == 0) s->incoming_v = val;
+            else if (strcmp(key, "extra_spares") == 0) s->extra_spares = (int)val;
+            else if (strcmp(key, "max_spares") == 0) s->max_spares = (int)val;
+
+            else if (strcmp(key, "controller_mode") == 0) s->controller_mode = (int)val;
+            else if (strcmp(key, "variantA_gamma") == 0) s->variantA_gamma = val;
+            else if (strcmp(key, "balanced_gap_eps") == 0) s->balanced_gap_eps = val;
+            else if (strcmp(key, "speed_relax_rate") == 0) s->speed_relax_rate = val;
+            else if (strcmp(key, "loss_to_spare_delay_min_steps") == 0) s->loss_to_spare_delay_min_steps = (int)val;
+            else if (strcmp(key, "loss_to_spare_delay_max_steps") == 0) s->loss_to_spare_delay_max_steps = (int)val;
+            else if (strcmp(key, "preventive_spares_frac") == 0) s->preventive_spares_frac = val;
         }
     }
     fclose(f);
+    if (s->n_total <= 0 && s->n_initial > 0) s->n_total = s->n_initial;
+    if (s->n_initial <= 0 && s->n_total > 0) s->n_initial = s->n_total;
+    if (s->n_total < s->n_initial) s->n_total = s->n_initial;
+    if (s->incoming_v <= 0) s->incoming_v = s->V;
+    if (s->max_spares < 0) s->max_spares = 0;
+    if (s->extra_spares < 0) s->extra_spares = 0;
+    if (s->min_spare_delay_steps < 0) s->min_spare_delay_steps = 0;
+    if (s->min_spare_interval_steps < 0) s->min_spare_interval_steps = 0;
+    if (s->spare_interval_min_steps < 0) s->spare_interval_min_steps = 0;
+    if (s->spare_interval_max_steps < 0) s->spare_interval_max_steps = 0;
+    /* Backward-compat: if range isn't set, fall back to fixed min_spare_interval_steps. */
+    if (s->spare_interval_min_steps <= 0) s->spare_interval_min_steps = s->min_spare_interval_steps;
+    if (s->spare_interval_max_steps <= 0) s->spare_interval_max_steps = s->spare_interval_min_steps;
+    if (s->spare_interval_max_steps < s->spare_interval_min_steps) s->spare_interval_max_steps = s->spare_interval_min_steps;
+
+    if (s->controller_mode < 0) s->controller_mode = 0;
+    if (s->controller_mode > 3) s->controller_mode = 3;
+    if (s->variantA_gamma < 0) s->variantA_gamma = 0;
+    if (s->balanced_gap_eps < 0) s->balanced_gap_eps = 0;
+    if (s->speed_relax_rate < 0) s->speed_relax_rate = 0;
+    if (s->speed_relax_rate > 1) s->speed_relax_rate = 1;
+
+    if (s->loss_to_spare_delay_min_steps < 0) s->loss_to_spare_delay_min_steps = 0;
+    if (s->loss_to_spare_delay_max_steps < 0) s->loss_to_spare_delay_max_steps = 0;
+    if (s->loss_to_spare_delay_max_steps > 0 && s->loss_to_spare_delay_min_steps <= 0) {
+        s->loss_to_spare_delay_min_steps = s->loss_to_spare_delay_max_steps;
+    }
+    if (s->loss_to_spare_delay_max_steps < s->loss_to_spare_delay_min_steps) {
+        s->loss_to_spare_delay_max_steps = s->loss_to_spare_delay_min_steps;
+    }
+
+    if (s->preventive_spares_frac < 0) s->preventive_spares_frac = 0;
+    if (s->preventive_spares_frac > 1.0) s->preventive_spares_frac = 1.0;
+    if (s->preventive_spares <= 0 && s->preventive_spares_frac > 0 && s->n_initial > 0) {
+        s->preventive_spares = (int)floor(s->preventive_spares_frac * (double)s->n_initial + 1e-9);
+    }
+    if (s->preventive_spares < 0) s->preventive_spares = 0;
+
     return 0;
 }
 
@@ -138,7 +262,7 @@ static void generate_losses(const Scenario *s, Loss **losses_out, int *count_out
     srand(s->seed);
     for (int i = 0; i < count; i++) {
         arr[i].step = rand() % (s->steps > 0 ? s->steps : 1);
-        arr[i].idx = rand() % (s->n > 0 ? s->n : 1);
+        arr[i].idx = rand() % (s->n_initial > 0 ? s->n_initial : 1);
     }
     /* sort by step for deterministic processing */
     for (int i = 0; i < count - 1; i++) {
@@ -155,7 +279,7 @@ static void generate_losses(const Scenario *s, Loss **losses_out, int *count_out
 }
 
 static void compute_gaps(Drone *fleet, const Scenario *s) {
-    int n = s->n;
+    int n = s->n_total;
     Ordered *order = malloc(n * sizeof(Ordered));
     int alive_count = 0;
     /* reset gaps each step; dead drones stay at zero */
@@ -211,7 +335,11 @@ static void compute_gaps(Drone *fleet, const Scenario *s) {
     free(order);
 }
 
-static int find_dead_drone(Drone *fleet, int n) {
+static int find_spare_slot(Drone *fleet, int n) {
+    /* Prefer true standby (never deployed) over reusing a failed index. */
+    for (int i = 0; i < n; i++) {
+        if (!fleet[i].alive && !fleet[i].ever_deployed) return i;
+    }
     for (int i = 0; i < n; i++) {
         if (!fleet[i].alive) return i;
     }
@@ -219,7 +347,7 @@ static int find_dead_drone(Drone *fleet, int n) {
 }
 
 static int find_largest_gap(const Drone *fleet, const Scenario *s, int *from_idx, double *from_pos, double *gap_out) {
-    int n = s->n;
+    int n = s->n_total;
     Ordered *order = malloc(n * sizeof(Ordered));
     int alive_count = 0;
     for (int i = 0; i < n; i++) {
@@ -237,7 +365,6 @@ static int find_largest_gap(const Drone *fleet, const Scenario *s, int *from_idx
     double best_pos = 0.0;
     int first_alive_seen = 0;
     double first_pos = 0.0;
-    int first_idx = -1;
     double prev_pos = 0.0;
     int prev_idx = -1;
     for (int k = 0; k < n; k++) {
@@ -247,7 +374,6 @@ static int find_largest_gap(const Drone *fleet, const Scenario *s, int *from_idx
         if (!first_alive_seen) {
             first_alive_seen = 1;
             first_pos = pos;
-            first_idx = idx;
         }
         if (prev_idx != -1) {
             double gap = pos - prev_pos;
@@ -276,19 +402,22 @@ static int find_largest_gap(const Drone *fleet, const Scenario *s, int *from_idx
 }
 
 static void simulate(Scenario *s, Loss *losses, int loss_count, FILE *summary, FILE *trace) {
-    int n = s->n;
+    int n = s->n_total;
     Drone *fleet = calloc(n, sizeof(Drone));
     for (int i = 0; i < n; i++) {
-        fleet[i].s = fmod(i * (s->perimeter / n), s->perimeter);
+        fleet[i].s = fmod(i * (s->perimeter / (s->n_initial > 0 ? s->n_initial : 1)), s->perimeter);
         fleet[i].v = s->V;
-        fleet[i].alive = 1;
+        fleet[i].alive = (i < s->n_initial) ? 1 : 0;
+        fleet[i].ever_deployed = (i < s->n_initial) ? 1 : 0;
         fleet[i].mode = 0;
         fleet[i].incoming_timer = 0;
     }
     int loss_idx = 0;
     int total_losses_seen = 0;
     int total_spares_inserted = 0;
-    int last_loss_step = -1000000;
+    int next_spare_after_loss_step = -1000000;
+    int next_spare_allowed_step = -1000000;
+    uint32_t spare_rng = ((uint32_t)(s->seed ? s->seed : 1u)) ^ 0x9e3779b9u;
     double dt = s->dt;
 
     /* Optional headers */
@@ -307,7 +436,13 @@ static void simulate(Scenario *s, Loss *losses, int loss_count, FILE *summary, F
             if (idx >= 0 && idx < n && fleet[idx].alive) {
                 fleet[idx].alive = 0;
                 loss_this_step = 1;
-                last_loss_step = step;
+                if (s->loss_to_spare_delay_min_steps > 0 || s->loss_to_spare_delay_max_steps > 0) {
+                    int d = rng_uniform_int(&spare_rng, s->loss_to_spare_delay_min_steps, s->loss_to_spare_delay_max_steps);
+                    if (d < 0) d = 0;
+                    next_spare_after_loss_step = step + d;
+                } else {
+                    next_spare_after_loss_step = step + s->min_spare_delay_steps;
+                }
             }
             loss_idx++;
         }
@@ -319,23 +454,34 @@ static void simulate(Scenario *s, Loss *losses, int loss_count, FILE *summary, F
             /* count how many are dead to gate spare pool */
             int dead_now = 0;
             for (int i = 0; i < n; i++) {
-                if (!fleet[i].alive) dead_now++;
+                if (fleet[i].ever_deployed && !fleet[i].alive) dead_now++;
             }
             if (total_losses_seen < dead_now) total_losses_seen = dead_now;
-            if (total_spares_inserted < total_losses_seen && total_spares_inserted < s->num_losses && (step - last_loss_step) >= s->min_spare_delay_steps) {
+            int max_spares = s->max_spares > 0 ? s->max_spares : s->num_losses;
+            int target_spares = total_losses_seen + s->preventive_spares + s->extra_spares;
+            if (target_spares < total_losses_seen) target_spares = total_losses_seen;
+            if (max_spares > 0 && target_spares > max_spares) target_spares = max_spares;
+            int ok_after_loss = (total_losses_seen > 0) ? (step >= next_spare_after_loss_step) : 1;
+            int ok_after_prev_spare = step >= next_spare_allowed_step;
+            int allow_before_loss = (s->preventive_spares > 0);
+            if ((total_losses_seen > 0 || allow_before_loss) && total_spares_inserted < target_spares && ok_after_loss && ok_after_prev_spare) {
                 int from_idx = -1; 
                 double from_pos = 0.0; 
                 double gap = 0.0;
                 if (find_largest_gap(fleet, s, &from_idx, &from_pos, &gap)) {
-                    int slot = find_dead_drone(fleet, n);
+                    int slot = find_spare_slot(fleet, n);
                     if (slot >= 0) {
                         double insert_pos = fmod(from_pos + 0.5 * gap + s->perimeter, s->perimeter);
                         fleet[slot].alive = 1;
+                        fleet[slot].ever_deployed = 1;
                         fleet[slot].s = insert_pos;
                         fleet[slot].v = s->V;
                         fleet[slot].mode = 1;
                         fleet[slot].incoming_timer = s->incoming_hold_steps;
                         total_spares_inserted++;
+                        int interval = rng_uniform_int(&spare_rng, s->spare_interval_min_steps, s->spare_interval_max_steps);
+                        if (interval < 0) interval = 0;
+                        next_spare_allowed_step = step + interval;
                         compute_gaps(fleet, s);
                     }
                 }
@@ -347,23 +493,45 @@ static void simulate(Scenario *s, Loss *losses, int loss_count, FILE *summary, F
             if (!fleet[i].alive) continue;
             double d_f = fleet[i].gap_f;
             double d_b = fleet[i].gap_b;
-            int rec = (d_f > s->alpha * s->d_star) || (d_b < s->beta * s->d_star);
-            double k_sym = rec && s->k_sym_rec > 0 ? s->k_sym_rec : s->k_sym;
             double gap_delta = d_f - d_b; /* accelerate if front gap > back gap, brake otherwise */
-            double v = s->V + k_sym * gap_delta;
-            if (d_f < s->d_safe) {
-                double cap = s->V * (d_f / s->d_safe);
-                if (v > cap) v = cap;
+
+            double v = fleet[i].v;
+            if (s->controller_mode == 0) {
+                /* legacy behavior (kept for backward compatibility) */
+                int rec = (d_f > s->alpha * s->d_star) || (d_b < s->beta * s->d_star);
+                double k_sym = rec && s->k_sym_rec > 0 ? s->k_sym_rec : s->k_sym;
+                v = s->V + k_sym * gap_delta;
+                if (d_f < s->d_safe) {
+                    double cap = s->V * (d_f / s->d_safe);
+                    if (v > cap) v = cap;
+                }
+                if (d_b < s->d_safe) {
+                    v += s->k_rep * (s->d_safe - d_b);
+                }
+                if (rec && v > s->V_cap) v = s->V_cap;
+            } else if (s->controller_mode == 1) {
+                /* Fresh-start baseline: midpoint seeking only */
+                v = s->V + s->k_sym * gap_delta;
+            } else if (s->controller_mode == 2) {
+                /* Variant A: adapt gain based on imbalance magnitude */
+                double denom = d_f + d_b + 1e-9;
+                double imbalance = fabs(gap_delta) / denom; /* 0..1-ish */
+                double gain = s->k_sym * (1.0 + s->variantA_gamma * imbalance);
+                v = s->V + gain * gap_delta;
+            } else if (s->controller_mode == 3) {
+                /* Variant C: balanced drones relax speed toward nominal progressively */
+                double target = s->V + s->k_sym * gap_delta;
+                if (fabs(gap_delta) <= s->balanced_gap_eps) {
+                    target = s->V;
+                }
+                v = fleet[i].v + s->speed_relax_rate * (target - fleet[i].v);
             }
-            if (d_b < s->d_safe) {
-                v += s->k_rep * (s->d_safe - d_b);
-            }
-            if (rec && v > s->V_cap) v = s->V_cap;
+
             if (v < 0) v = 0;
             if (v > s->Vmax) v = s->Vmax;
             /* incoming drones stay at nominal speed for a fixed window */
             if (fleet[i].mode == 1 && fleet[i].incoming_timer > 0) {
-                v = s->V;
+                v = s->incoming_v;
                 fleet[i].incoming_timer--;
                 if (fleet[i].incoming_timer == 0) {
                     fleet[i].mode = 0;
@@ -457,7 +625,8 @@ static void simulate(Scenario *s, Loss *losses, int loss_count, FILE *summary, F
         gap_count++;
         if (fleet[i].gap_f > max_gap) max_gap = fleet[i].gap_f;
     }
-    double density = (double)alive / n;
+    int denom = s->n_initial > 0 ? s->n_initial : n;
+    double density = denom > 0 ? ((double)alive / denom) : 0.0;
     double avg_speed = alive ? sum_v / alive : 0;
     double var = alive ? (sum_v2 / alive - avg_speed * avg_speed) : 0;
     double speed_std = var > 0 ? sqrt(var) : 0;
@@ -486,11 +655,19 @@ int main(int argc, char **argv) {
         return 1;
     }
     Scenario s = {0};
+    s.n_initial = 0;
+    s.n_total = 0;
     s.V = 1.0; s.Vmax = 2.0; s.d_star = 5.0; s.d_safe = 1.0;
     s.k_sym = 0.5; s.k_sym_rec = 0.5; /* symmetric gap controller (front-back) */
     s.k_f = 0.5; s.k_b = 0.3; s.k_rep = 0.2; s.k_f_rec = 0.8; s.k_b_rec = 0.0;
     s.alpha = 1.2; s.beta = 0.8; s.V_cap = 1.5; s.epsilon = 0.1; s.steps = 500; s.dt = 0.1;
-    s.num_losses = 0; s.seed = 1; s.resilience = 0; s.min_spare_delay_steps = 0; s.incoming_hold_steps = 50;
+    s.num_losses = 0; s.seed = 1; s.resilience = 0; s.min_spare_delay_steps = 0; s.min_spare_interval_steps = 0;
+    s.spare_interval_min_steps = 0; s.spare_interval_max_steps = 0; s.incoming_hold_steps = 50;
+    s.incoming_v = 0.0; s.extra_spares = 0; s.max_spares = 0;
+
+    s.controller_mode = 0; s.variantA_gamma = 0.0; s.balanced_gap_eps = 0.0; s.speed_relax_rate = 1.0;
+    s.loss_to_spare_delay_min_steps = 0; s.loss_to_spare_delay_max_steps = 0;
+    s.preventive_spares_frac = 0.0; s.preventive_spares = 0;
 
     if (read_scenario(argv[1], &s) != 0) {
         fprintf(stderr, "Could not read scenario file %s\n", argv[1]);
