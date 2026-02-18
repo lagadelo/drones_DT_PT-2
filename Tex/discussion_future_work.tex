@@ -1,0 +1,10 @@
+\section{Discussion and Future Work}
+\label{sec:discussion_future_work}
+
+This section summarizes limitations of the current evaluation setup and outlines extensions that are compatible with the proposed PT/DT architecture.
+
+\subsection{DT-enhanced predictive loss recovery}
+While Algorithm~\ref{alg:baseline} is sufficient to obtain rebalancing and spare assimilation using only two-neighbor perception (and no inter-drone communication), DT-enhanced strategies can further reduce recovery time and peak uncovered gap. A first extension is \emph{loss-to-trajectory prediction}: upon an exception report, the DT simulates the post-loss transient under the same local controller and forecasts quantities such as $g_{\max}(t)$ and $T_{\text{restore}}$.
+
+\subsection{Time-feasible (arrival-aware) spare insertion}
+A second extension is \emph{arrival-time-aware insertion}: given a spare staging point $\mathbf{x}_0$, a speed limit $V_{\max}$ and an estimated travel time $t_a$, the DT selects an insertion waypoint (or gap midpoint) predicted to be optimal at time $t_a$ (rather than at decision time), accounting for the fact that the fleet phase and the largest gap evolve during the spare flight.

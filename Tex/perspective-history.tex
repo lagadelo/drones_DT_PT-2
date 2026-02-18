@@ -1,0 +1,8 @@
+\textbf{Variation Point} set at mission time. This allows operators to tailor the system's security posture to the tactical situation by selecting the complexity of the behavioral patterns used for implicit friend/foe identification, trading security against latency and computational load.
+\begin{itemize}
+    \item\textbf{Level 1: Simple} A single, fixed maneuver. Fast to recognize but easier for an adversary to learn.
+    \item\textbf{Level 2: Choreographed} A pre-defined sequence of maneuvers. Harder to mimic but increases recognition latency.
+    \item\textbf{Level 3: Complex} Interactive Challenge-Response can serve as a two-way authentication protocol. An "insider" PT executes a challenge maneuver, and a friendly "incomer" must execute the correct response maneuver. This offers the reasonnable security, still being deterministic in terms of deployed algorims, but with a variety of challenges.
+\end{itemize}
+\subsubsection{Variation Point: Furtive Intrusion Detection}
+A primary security requirement is the ability to identify intruders without revealing the fleet's own presence. Traditional active protocols like Identification Friend or Foe (IFF) are explicitly rejected as they violate the need for furtivity. Our solution is based on passive behavioral analysis, which we propose as a configurable 

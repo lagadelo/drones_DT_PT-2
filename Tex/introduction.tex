@@ -1,0 +1,116 @@
+\section{Introduction: An MBSE Approach to Resilient Surveillance}
+
+Modern security operations for critical infrastructure require persistent \textbf{surveillance}, robust \textbf{resilience} against hostile environments (e.g., wildfires, intelligent adversaries), and high \textbf{credibility} in autonomous decision-making. Resilience is a fundamental requirement for ensuring the operational continuity of collaborative systems, particularly drone fleets. 
+Resilience is defined as a system's ability to withstand disruption, adapt and recover from it~\cite{wied2020conceptualizing}. 
+Traditional approaches to risk management rely primarily on the design phase, which limits their effectiveness in dynamic and evolving environments~\cite{cederbladh2024early, brandstetter2015early}.
+
+Digital twin (DT) emerged to meet the need to control, predict behaviours, improve maintenance, ensure the continued operation of an actual system. A DT is defined as a virtual representation of an actual twin that can be a physical object, a process, or a system, enabling real-time performance monitoring, behaviour simulation, and usage optimization through real-time data \cite{kritzinger_digital_2018}.
+A DT, in addition to being a representation of its AT, can have the ability to send data and act directly on the AT. This ability allows it to improve the efficiency of the decision-making process, optimization and problem-solving. 
+By leveraging DTs, organizations can improve their performance through predictive maintenance or system optimization and enhanced decision-making capabilities.
+
+By leveraging DTs, organizations can improve their performance through predictive maintenance or system optimization and enhanced decision-making capabilities. These virtual replicas enable testing and validation, allowing organizations to simulate scenarios, anticipate challenges, and implement solutions proactively.
+A significant advantage of incorporating DTs lies in their ability to facilitate continuous improvement. Through iterative testing and automation, companies can refine processes and products, achieving higher levels of efficiency and quality. The capacity for real-time monitoring ensures that organizations can respond to changing operational conditions swiftly, minimizing downtime and operational risks.
+The use of digital twin allows for on-the-fly prototyping of scenario exploration, remediation strategies and assessing their effectiveness, using simulation and modelling of system behaviour under normal and disrupted conditions, taking into account different sources of disruption. The digital twin can thus be used to test different system configurations and anticipate potential failures.
+
+
+The development of DT has been widely explored in industry and in various fields  \cite{dalibor2022cross}. An ISO standard  \cite{ISO23247} describes the fundamental principles of a framework for industrial DT. Models  \cite{eramo2021conceptualizing} and architectures, such as DT RAMI 4.0  \cite{lindner2023digital}, exist as well as software development platforms offered by major software publishers. The number of publications is increasing on this subject, mainly in the industrial field. The issues related to the use of a DT mainly focus on how to use this technology to model the system, detect potential disturbances and predict their undesirable effects, deploy resilience policies, while integrating it into the daily management of the RS (maintenance, etc.). 
+
+\subsection{Application Domain: Drone-Based Perimeter Surveillance}
+This work focuses on \textbf{perimeter surveillance} as its primary application domain, where critical infrastructure (power plants, military installations, sensitive facilities) requires continuous monitoring against intrusions and threats. Drone fleets are particularly well-suited to this mission: they provide mobile, reconfigurable surveillance capabilities that can adapt to failures, scale to large perimeters, and maintain persistent coverage without fixed infrastructure. Unlike stationary sensor networks, circulating drones offer inherent resilience through motion and redundancy, while their communication-minimized operation supports both operational efficiency and tactical discretion. The integration of DT technology with such autonomous drone fleets raises fundamental questions about architecture, control distribution, and the balance between local autonomy and global coordination—questions this paper addresses systematically.
+
+\subsection{Contributions}
+This work makes two complementary contributions, detailed in Section~III:
+\begin{enumerate}
+    \item \textbf{Loosely-coupled PT/DT architecture}: An architectural paradigm enabling furtive autonomous operations through asymmetric coupling—\emph{Physical Twin} (PT) executes fully autonomous distributed control while \emph{Digital Twin} (DT) provides event-driven predictive oversight and conditional spare staging, without continuous communication or explicit commands.
+    \item \textbf{Empirical scalability validation}: Quantified evidence that the PT/DT architecture scales from research prototype ($n=20$ drones) to country-scale deployments ($n=10{,}000$ drones), with findings on sensing economics, failure resilience, computational feasibility, and deployment viability.
+\end{enumerate}
+
+\noindent The evaluation methodology underpinning these contributions—Design-Space Exploration (DSE) for systematic comparison of architectural and algorithmic alternatives—is presented in Section~II. The PT/DT architectural decomposition and coupling mechanisms are formally introduced in Section~IV.
+
+\subsection{Requirements and Constraints}
+
+A comprehensive list of requirements for the system (i.e., conditions or capabilities that the system must fulfill to achieve its objectives) is itemized below, organized by lifecycle stage:
+
+\paragraph{Design Time}
+\begin{itemize}
+    \item $R_{DT}^\circ$1: \textbf{Domain Space Exploration (DSE)} shall support prescriptive design by expressing architectural alternatives and exposing measurable trade-offs (e.g., performance vs. cost) of the whole system.
+    \item \textbf{Non-Functional Requirements (NFRs):}
+    \begin{itemize}
+        \item $R^\circ$1: \textbf{Scalability} — System capability must grow no more than linearly with asset size.
+        \item $R^\circ$2: \textbf{Reliability} — High confidence in detection with low false positives.
+        \item $R^\circ$3: \textbf{Resilience / Survivability} — The system shall maintain service availability despite failures.
+    \end{itemize}
+\end{itemize}
+
+\paragraph{Operation Time}
+\begin{itemize}
+    \item $R_{OT}^\circ$1: \textbf{Continuous Coverage} — Critical assets must be protected by ensuring 24/7 surveillance.
+    \item $R_{OT}^\circ$2: \textbf{Trusted Detection} — Undesired events are reported based on reliable detection.
+    \item $R_{OT}^\circ$3: \textbf{Appropriate Response} — The system must enable timely and effective countermeasures.
+    \item \textbf{Operational Constraints:}
+    \begin{itemize}
+        \item $C_{Op}^\circ$1: \textbf{Tactical Autonomy} — Operational needs must be fulfilled automatically at the tactical level.
+        \item $C_{Op}^\circ$2: \textbf{Human-Centric Strategy} — High-level strategic decisions (e.g., resource reallocation) must remain under human control (human-in-the-loop).
+    \end{itemize}
+\end{itemize}
+
+\paragraph{Deployment Time}
+\begin{itemize}
+    \item \textbf{Deployment-time objective:} initialize the system (fleet size, waypoint geometry, initial spacing, DT thresholds) so that the subsequent mission can run autonomously.
+    \item $C^\circ$1: \textbf{Resilience / Survivability} --- Maintain service availability despite partial degradation (for example the loss of a drone).
+    \item $C^\circ$2: \textbf{Parsimony / Efficiency} --- Cost-effective operation for indefinite mission durations (energy/asset optimization).
+    \item $C^\circ$3: \textbf{Furtivity / Low Observability} --- In military or adversarial contexts, this extends to avoiding detection by adversaries. It means that the communications must be limited to the necessary.
+\end{itemize}
+
+\noindent
+%\textit{Note:} For civilian applications (e.g., disaster response), $C^\circ$3 emphasizes minimizing interference and respecting privacy, while in military scenarios, it prioritizes stealth and low observability.
+
+%\subsection{Traceability Table}
+Table~\ref{tab:traceability} maps requirements and constraints that directly drive architectural design decisions. Functional outcomes (e.g., continuous coverage $R_{OT}^\circ$1, trusted detection $R_{OT}^\circ$2, appropriate response $R_{OT}^\circ$3) and meta-requirements (e.g., DSE support $R_{DT}^\circ$1, human-centric strategy $C_{Op}^\circ$2) are realized as emergent properties through the combination of these architectural choices rather than standalone design responses.
+
+\begin{table}[ht]
+\caption{Traceability from Requirements and Constraints to Architectural Responses}
+\label{tab:traceability}
+\centering
+\begin{tabular}{|p{1.1cm}|l|p{1.6cm}|p{3cm}|}
+\hline
+\textbf{Stage} & \textbf{ID} & \textbf{R /C} & \textbf{Architectural Response} \\
+\hline
+Design     & $R^\circ$1 & Scalability & Distributed control; modular fleet structure; teleoperation-free operation \\
+Design     & $R^\circ$2 & Reliability & Redundant sensing; confidence scoring; event qualification \\
+Design     & $R^\circ$3 & Resilience,  Survivability & Scenario-based dimensioning; circulating assets; self-organization; on-demand spare deployment \\
+Operation  & $C_{Op}^\circ$1 & Tactical autonomy & Local adaptation; algorithmic control laws; implicit support request \\
+Operation  & $C^\circ$2 & Parsimony,  Efficiency & Exception-only communications; energy-aware control \\
+Deployment & $C^\circ$3 & Furtivity,  Low observability & Silent by default; event-triggered RF; semantic filtering (qualified events only); optional cross-confirmation for intrusions (not for loss/destruction) \\
+\hline
+\end{tabular}
+\end{table}
+ 
+
+\subsection{From Requirements to Architecture}
+
+Given the drone-based perimeter surveillance context, the core challenge is to design a system architecture that fulfills three key objectives: (1) surviving component loss, (2) identifying threats furtively, and (3) providing decision-makers with the necessary strategic awareness to act when required.
+
+The fleet operates as a \textbf{system of systems (SoS)}: each drone has its own autonomy, decision-making system, and geographical position, yet they must coordinate collectively to accomplish the surveillance mission. The requirements enumerated above—persistent coverage ($R_{OT}^\circ$1), resilience to losses ($R^\circ$3), scalability ($R^\circ$1), tactical autonomy ($C_{Op}^\circ$1), and furtivity ($C^\circ$3)—drive the following architectural choices:
+
+\paragraph{Architectural Choices:}
+\begin{itemize}
+    \item \textbf{Circulating Architecture for Positional Furtivity} Mobile assets in constant motion create a dynamic, unpredictable surveillance screen, enhancing both resilience and furtivity.
+    \item \textbf{Event-Triggered Communication:} To minimize RF signature, assets communicate only mission-critical exceptions, not nominal status updates.
+    \item \textbf{Autonomy-First Design:} Local decision-making authority is essential for scalability; teleoperation is unscalable at large fleet sizes.
+    \item \textbf{Hybrid Control Loop:} A distributed fleet is complemented by a global reasoning layer, providing strategic situational awareness and supporting human-in-the-loop decision-making.
+\end{itemize}
+
+\paragraph{Logical Components:}
+\begin{itemize}
+    \item \textbf{Field Observer:} Responsible for data acquisition, information extraction, event qualification, and exception-based reporting.
+    \item \textbf{Global Reasoner:} Maintains global situational awareness, simulates reaction scenarios, and supports strategic decisions (e.g., asset injection, resource reallocation).
+\end{itemize}
+
+\paragraph{Physical Implementation:}
+\begin{itemize}
+    \item \textbf{Patrolling Drone Fleet:} At the implementation level, the system is realized as a fleet of drones following deterministic trajectories, relying on neighbor-only awareness, and self-adapting to losses.
+    \item \textbf{Communication Policy:} "Silence by default"—only exceptions (loss, intrusion) are reported.
+\end{itemize}
+
+%\subsection{Domain Space Exploration (pointer)}

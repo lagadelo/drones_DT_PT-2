@@ -1,0 +1,21 @@
+digraph algorithm_tradeoff_radar {
+  graph [fontname="Helvetica", fontsize=10, labelloc="t", label="Algorithm trade-offs (illustrative): baseline vs variants"];
+  node  [shape=plaintext, fontname="Helvetica", fontsize=10];
+  rankdir=LR;
+
+  t [label=<
+    <table border="1" cellborder="1" cellspacing="0" cellpadding="4">
+      <tr>
+        <td bgcolor="#f0f0f0"><b>Metric</b></td>
+        <td bgcolor="#f0f0f0"><b>Baseline (A1)</b></td>
+        <td bgcolor="#f0f0f0"><b>Nonlinear weights (A3)</b></td>
+        <td bgcolor="#f0f0f0"><b>Waypoint-skip (A6)</b></td>
+      </tr>
+      <tr><td>Coverage floor $C_{\min}$</td><td align="center">med</td><td align="center">high</td><td align="center">high</td></tr>
+      <tr><td>Restoration time $T_{\text{restore}}$</td><td align="center">med</td><td align="center">med</td><td align="center">low</td></tr>
+      <tr><td>Energy overhead $\Delta E$</td><td align="center">low</td><td align="center">med</td><td align="center">high</td></tr>
+      <tr><td>Stability margin</td><td align="center">high</td><td align="center">med</td><td align="center">med</td></tr>
+      <tr><td>Implementation complexity</td><td align="center">low</td><td align="center">med</td><td align="center">high</td></tr>
+    </table>
+  >];
+}

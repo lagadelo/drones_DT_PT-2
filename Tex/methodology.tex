@@ -1,0 +1,131 @@
+\section{Methodology}
+\label{sec:methodology}
+ 
+This section specifies the evaluation protocol used to compare controller variants under identical scenarios. We first state invariant assumptions shared by all runs, then describe the DT/PT simulation--emulation stack, the baseline controller and its variation points (domain space exploration), and finally the parameters and metrics used for comparison.
+% Obsolete: legacy overview figure removed (was previously referred to as Fig. 5).
+% The updated content is now covered by the UML diagrams (class + state).
+\subsection{Methodological Invariants}
+All experiments share the following invariant protocols:
+\begin{itemize}
+ \item\textbf {Code uniformity:}  All experiments enforce CR$^{\circ}$3 by ensuring that every drone executes identical control code.
+   \item \textbf{Common control law:} Both PT ('Execute') and DT ('High level simulation') use the same distributed density-balancing algorithm, ensuring predictive consistency.
+   
+\item \textbf{Architecture coupling:} PT agents execute continuous-time control with discrete sensor sampling; the DT operates in event-driven mode, triggered by exception reporting and outputs spare staging decisions and insertion waypoints.
+ 
+    \item \textbf{Forecast window:} The DT evaluates recovery over an adaptation window $T_{\text{adapt}}$ and applies calibrated thresholds to decide on spare staging.
+    \item \textbf{Tooling separation:} To ensure credibility, simulation and emulation use independent configurations and parameter pinning (see Section~\ref{subsec:simulation}).
+\end{itemize}
+
+\begin{figure}[t]
+    \centering
+    % UML diagram is provided as a PDF; keep compilation safe if the file is absent.
+    \IfFileExists{figures/UML_DT4RSN.pdf}{%
+        \includegraphics[width=\columnwidth]{figures/UML_DT4RSN.pdf}%
+    }{%
+        \fbox{\parbox[c][0.22\textheight][c]{0.95\columnwidth}{\centering Missing Figure Placeholder: figures/UML_DT4RSN.pdf}}%
+    }
+    \caption{UML class diagram of the simulation/emulation stack. The base \texttt{Drone} class factors common navigation and control interfaces, while specialized subclasses (\texttt{PT}, \texttt{Process}, \texttt{Avatar}) override \texttt{sense()} and \texttt{execute()} to reflect physical execution, multiprocessing emulation, and pure simulation behaviors. The \texttt{Mission} encapsulates the waypoint/perimeter geometry, and the \texttt{DT} maintains global state and runs event-driven predictive simulations.}
+    \label{fig:uml_dt4rsn}
+\end{figure}
+
+\begin{figure}[t]
+    \centering
+    % State diagram for the DT4RSN runtime: nominal deployment/patrolling with detection substates.
+    \IfFileExists{figures/UML_DT4RSN_state.pdf}{%
+        \includegraphics[width=\columnwidth]{figures/UML_DT4RSN_state.pdf}%
+    }{%
+        \IfFileExists{figures/UML_DT4RSN_state..pdf}{%
+            \includegraphics[width=\columnwidth]{\detokenize{figures/UML_DT4RSN_state..pdf}}%
+        }{%
+            \fbox{\parbox[c][0.22\textheight][c]{0.95\columnwidth}{\centering Missing Figure Placeholder: figures/UML_DT4RSN_state.pdf}}%
+        }%
+    }
+    \caption{UML state diagram (\texttt{DT4RSN\_STATE}) describing the runtime logic of a drone. After deployment, the drone transitions to a nominal patrolling mode and cycles through waypoint-following. Intrusion handling is modeled as substates of patrolling (e.g., \emph{monitoring}, \emph{confirming}, and \emph{reporting}), and exits back to nominal patrol once the event is cleared. This representation emphasizes that detection augments, rather than replaces, the baseline spacing and navigation loop.}
+    \label{fig:uml_dt4rsn_state}
+\end{figure}
+
+% NOTE: Any in-text mention of “Fig. 5” for the state diagram is obsolete.
+% Always refer to the state diagram via \ref{fig:uml_dt4rsn_state} (currently Fig.~\ref{fig:uml_dt4rsn_state}).
+
+\begin{algorithm}[t]
+\caption{Local spacing control with loss reaction and spare assimilation (runs on every drone; no inter-drone comms).}
+\label{alg:baseline}
+\DontPrintSemicolon
+\LinesNumbered
+\footnotesize
+\SetKwInOut{Input}{Input}
+\Input{Nominal speed $V$, max speed $V_{\max}$, desired spacing $d^{\star}$, safety distance $d_{\text{safe}}$, gains $(k_f,k_b,k_{\text{rep}})$, recovery gains $(k_f^{\text{rec}},k_b^{\text{rec}})$, schedule $g(\cdot)$ (default $g\equiv 1$), thresholds $(\alpha,\beta)$, recovery cap $V_{\text{cap}}$.}
+\BlankLine
+	cp{State (per drone $i$): $mode\in\{\textsc{Baseline},\textsc{Incoming}\}$, $rec\in\{0,1\}$}
+\While{mission active}{
+    Project pose on perimeter to get curvilinear coordinate $s_i$\;
+    Sense front/back neighbors; if missing, set $v_i\leftarrow V$ and continue\;
+    Compute ring gaps: $d_f\leftarrow (s_f-s_i)\bmod P$, $d_b\leftarrow (s_i-s_b)\bmod P$\;
+    	cp{Recovery trigger (loss hole / compression wave)}
+        \label{algline:rec}
+    $rec\leftarrow [d_f>\alpha d^{\star}]\ \lor\ [d_b<\beta d^{\star}]$\;
+        cc{Symmetric gap gain (front--back difference)}
+    $\tilde{k}_{sym} \leftarrow k_{sym}$\;
+	\If{$rec$}{ $\tilde{k}_{sym} \leftarrow k_{sym}^{\text{rec}}$\; }
+        cc{VP-A: spacing gain schedule (baseline: $g(\cdot)\equiv 1$)}
+	$\gamma \leftarrow g\big(|d_f-d^{\star}|\big)$\;
+    	\cp{Spacing + safety shaping}
+        \label{algline:spacing}
+    $v_i\leftarrow V + \tilde{k}_{sym}\,\gamma\,(d_f-d_b)$\;
+    \If{$d_f<d_{\text{safe}}$}{ $v_i\leftarrow \min\big(v_i,\ V\cdot(d_f/d_{\text{safe}})\big)$\; }
+    \If{$d_b<d_{\text{safe}}$}{ $v_i\leftarrow v_i + k_{\text{rep}}(d_{\text{safe}}-d_b)$\; }
+        \label{algline:cap}
+    \If{$rec$}{ $v_i\leftarrow \min(v_i, V_{\text{cap}})$\; }
+    	cp{Spare: merge until stable, then behave as baseline}
+    \If{$mode=\textsc{Incoming}$ \textbf{and} timer expired}{ $mode\leftarrow \textsc{Baseline}$\; }
+    $v_i\leftarrow \max\{0,\min(v_i,V_{\max})\}$; move along waypoint loop\;
+}
+\normalsize
+\end{algorithm}
+
+% NOTE: Baseline/variant descriptions are consolidated later in this section
+% (see the second "Algorithm Candidates" subsection) to avoid duplication.
+
+\subsection{Perception and intrusion emulation (summary)}
+Local awareness is emulated through periodic broadcast of an \emph{Emulated Perception Message} (EPM) by each agent (Avatar in Fig.~\ref{fig:uml_dt4rsn}):
+\begin{equation}
+epm^t_i = \langle i,\, \mathbf{x}^t_i, \text{mode}_i \rangle
+\label{eqn:epm}
+\end{equation}
+Neighborhood detection is reconstructed from these messages by range filtering. Intruders are represented by negative identifiers and are sensed through the same mechanism with a dedicated monitoring radius. \textit{Critically}, the mode field (BASELINE or INCOMING) is included in the EPM to enable neighbors to adapt their control law in response to spare integration (see VP-C in Section~\ref{subsec:design_space}).
+
+A drone in INCOMING mode (recently inserted spare) broadcasts $\text{mode}_i = \texttt{INCOMING}$ while it is clamped at nominal speed for a fixed hold window (Algorithm~\ref{alg:baseline} lines~82--84). Under the symmetric controller there is no back-pressure term to disable; the flag is only used to gate the release timer and to make the transient explicit in traces.
+
+This mechanism keeps the spare passive during merging without requiring any additional coordination signals beyond the periodic EPM broadcast already used for neighborhood sensing.
+
+\subsection{Simulation Architecture}
+\label{subsec:simulation}
+The simulation stack is organized into coordinated layers:
+\begin{enumerate}
+    \item \textbf{DT event-based simulator:} Operates on an event queue, advancing the global state only when an exception is received. Predictive simulation is triggered by events and runs over $T_{\text{adapt}}$.
+    \item \textbf{PT software simulation (agent-level):} Each drone is executed as an independent software process running the local control loop (Algorithm~\ref{alg:baseline}). In this simulation mode, ``who is in sight'' can be obtained from the DT (ground-truth neighborhood query) to provide an idealized reference.
+    \item \textbf{Perception/messaging emulation (EPM-based):} In the emulation mode, agents have \emph{no} access to DT ground-truth neighborhood information. Instead, sight is reconstructed from sent/received EPMs and their controlled visibility (sampling rate, sensing radius, semantic filtering, exception-only reporting), matching the constrained local view described in Section~V-C.
+    \item \textbf{Global supervisor (transversal):} Orchestrates scenarios and hazards (losses, bursts, detections), pins emulator parameters, and performs coherence checks by comparing DT forecasts against PT software-simulation outcomes.
+\end{enumerate}
+This architecture enables rigorous, scalable, and reproducible evaluation of the system.
+
+% \subsection{Scope note (moved to discussion)}
+% DT-enhanced strategies such as loss-to-trajectory prediction and arrival-time-aware insertion are promising extensions, but they are not required to define the experimental protocol of Section~V; we therefore reserve them for the discussion/future-work part of the manuscript.
+
+\subsection{Experimental Parameters and Metrics}
+We sweep the following parameters across specified ranges:
+\begin{itemize}
+    \item \textbf{Fleet configuration:} Fleet size $n$, platform heterogeneity, detection radius $r_d$.
+    \item \textbf{Mission geometry:} Polygon complexity $p$, perimeter length $P_{\text{total}}$, waypoint density $w_e$.
+    \item \textbf{Fault profiles:} Temporal (instantaneous, sequential, bursts), spatial (uniform, clustered, max-separation).
+    \item \textbf{Spare-deployment policy:} Thresholds $\{\sigma^2_{\text{max}}, C_{\text{critical}}, T_{\text{adapt}}, n_{\min}\}$, insertion rule (midpoint of largest gap).
+\end{itemize}
+
+Metrics include:
+\begin{itemize}
+    \item \textbf{Resilience:} Density variance $\sigma^2_{\rho}(t)$, coverage fraction $C(t)$, time-to-restoration $T_{\text{restore}}$, gap statistics $g_{\max}(t)$.
+    \item \textbf{Decision:} Spare deployment rate, decision latency $T_{\text{decision}}$, ROC curves, insertion accuracy.
+    \item \textbf{Efficiency:} Energy overhead $\Delta E$, PT control cycle time, DT simulation time, scalability.
+\end{itemize}
+% Methodology D/E: specialized parts that contextualize the above protocol.
+\input{methodology_DE_specialization.tex}

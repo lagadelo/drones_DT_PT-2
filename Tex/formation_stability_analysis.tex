@@ -1,0 +1,122 @@
+\subsection{Formation Stability Metric: Definition and Interpretation}
+\label{subsec:formation_stability}
+
+\subsubsection{Definition}
+
+The \textit{formation stability} metric quantifies how closely the fleet maintains its target inter-drone spacing. The metric is computed as:
+
+\begin{equation}
+\text{stability} = \frac{1}{1 + \frac{|\text{avg\_gap} - \text{nominal\_spacing}|}{\text{nominal\_spacing}}}
+\label{eq:formation_stability}
+\end{equation}
+
+where $\text{avg\_gap}$ is the mean distance between consecutive drones (measured along the patrol circuit) and $\text{nominal\_spacing}$ is the desired inter-drone separation established during mission initialization.
+
+\subsubsection{Meaning: How Close to Ideal Spacing}
+
+The stability metric ranges from 0 to 1, with the following interpretation:
+
+\begin{itemize}
+    \item \textbf{Stability = 1.0}: Perfect formation. The actual average gap equals the nominal spacing exactly, indicating tight coordination and optimal density.
+    
+    \item \textbf{Stability = 0.5}: Gap error equals nominal spacing. The measured average gap deviates from the target by an amount equal to the target itself, indicating significant formation disruption.
+    
+    \item \textbf{Stability = 0.0}: Extreme deviation. The gap error approaches infinity, indicating severe formation collapse or fleet dispersal.
+\end{itemize}
+
+\subsubsection{Practical Interpretation}
+
+Table~\ref{table:stability_interpretation} provides practical guidance for interpreting stability values:
+
+\begin{table}[h]
+\centering
+\caption{Stability value ranges and corresponding formation status}
+\label{table:stability_interpretation}
+\begin{tabular}{|c|l|l|}
+\hline
+\textbf{Stability Range} & \textbf{Interpretation} & \textbf{Formation Status} \\
+\hline
+0.90--1.00 & Excellent & Tight, disciplined formation; drones maintain target spacing \\
+\hline
+0.70--0.89 & Good & Acceptable formation; minor spacing variations under control \\
+\hline
+0.50--0.69 & Fair & Noticeable gaps; formation disrupted but recoverable \\
+\hline
+$< 0.50$ & Poor & Large deviations; formation compromised, requires intervention \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Analysis of Simulated Results}
+
+From the comprehensive multi-scenario simulation presented in Section~\ref{sec:simulation_validation}, we observe:
+
+\begin{table}[h]
+\centering
+\caption{Formation stability by balancing policy (from simulation)}
+\label{table:stability_by_policy}
+\begin{tabular}{|l|c|c|c|c|}
+\hline
+\textbf{Policy} & \textbf{Scenarios} & \textbf{Density} & \textbf{Formation Stability} & \textbf{Max Gap} \\
+\hline
+Conservative & 9 & 0.9000 & 0.0378 & 145.0 m \\
+\hline
+Aggressive & 6 & 0.9171 & 0.0357 & 121.1 m \\
+\hline
+Adaptive & 5 & 0.8867 & 0.0213 & 215.4 m \\
+\hline
+\end{tabular}
+\end{table}
+
+\textbf{Why are absolute values so low?} The low stability values (approximately 0.021--0.038) reflect the inherent geometry of the mission: large perimeter circuits (100--250 meters) with relatively small fleet sizes (20--50 drones) result in mandatory wide inter-drone gaps (121--215 meters). These gaps are 10--40 times larger than the nominal spacing target (4--5.5 meters), causing the denominator in Equation~\ref{eq:formation_stability} to become very large.
+
+Formally, when $|\text{avg\_gap} - \text{nominal\_spacing}| \gg \text{nominal\_spacing}$, the stability approaches zero, regardless of the quality of formation maintenance relative to the enforced geometry.
+
+\subsubsection{Key Insights from Results}
+
+\paragraph{Policy Comparison}
+
+\begin{itemize}
+    \item \textbf{Conservative policy (stability = 0.0378):} Maintains the highest absolute stability among the three policies. This policy prioritizes maintaining tighter formation clustering, leading to better coordination during nominal operations and faster recovery after failures.
+    
+    \item \textbf{Aggressive policy (stability = 0.0357):} Achieves slightly lower stability but compensates with faster response times. The aggressive policy accepts wider transient gaps to enable rapid speedup for recovery, showing the fastest recovery slope ($\beta = 0.03325$).
+    
+    \item \textbf{Adaptive policy (stability = 0.0213):} Exhibits the lowest stability, reflecting its strategy of spreading the fleet widely across the perimeter for maximum coverage uniformity. The wider gaps (215.4 m maximum) provide robustness against localized failures but sacrifice coordination.
+\end{itemize}
+
+\paragraph{Failure Distribution Impact}
+
+\begin{table}[h]
+\centering
+\caption{Formation stability by failure distribution mode}
+\label{table:stability_by_distribution}
+\begin{tabular}{|l|c|c|c|}
+\hline
+\textbf{Distribution Mode} & \textbf{Scenarios} & \textbf{Mean Density} & \textbf{Mean Gap} \\
+\hline
+Random & 7 & 0.9001 & 159.06 m \\
+\hline
+Spatial Clustered & 7 & 0.9001 & 159.06 m \\
+\hline
+Temporal Cascade & 6 & 0.9057 & 144.98 m \\
+\hline
+\end{tabular}
+\end{table}
+
+Temporal cascade failures achieve the highest mean density and smallest average gaps, suggesting that time-based escalating failures provide the system additional opportunity to mobilize defenses (spare insertion, rebalancing) before coverage degrades significantly.
+
+\subsubsection{Design Recommendation: Using Stability as a Diagnostic Metric}
+
+Given the mission geometry, absolute stability values are not the primary KPI; instead, \textit{stability trends} serve as critical diagnostics:
+
+\begin{enumerate}
+    \item \textbf{Anomaly detection:} A sudden drop in stability after an event indicates formation disruption. Monitor the rate of stability change ($d\text{stability}/dt$) to detect degradation acceleration.
+    
+    \item \textbf{Spare insertion validation:} After staging a spare drone, stability should improve rapidly (within 10--50 simulation steps, or 1--5 seconds physical time). Failure to improve indicates insertion-point miscalculation or cascading failures.
+    
+    \item \textbf{Balancing policy tuning:} Compare stability trends across policies under identical failure scenarios. Policies exhibiting faster recovery of stability are preferred for time-critical missions; those maintaining higher absolute stability are preferred for endurance missions.
+    
+    \item \textbf{Failure escalation detection:} Monitor stability over mission duration. If stability systematically degrades despite spare insertions, this signals escalating threat intensity (e.g., adversarial action), warranting policy recalibration or mission termination.
+\end{enumerate}
+
+Thus, stability serves not as an absolute performance target but as a \emph{dynamic health indicator}, enabling the DT to detect anomalies and validate intervention effectiveness in real time.

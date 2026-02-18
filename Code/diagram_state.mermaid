@@ -1,0 +1,86 @@
+stateDiagram-v2
+    [*] --> Deployment: Mission Start
+
+    Deployment --> Nominal: Fleet initialized
+
+    Nominal --> LossDetected: Loss event reported
+    note right of Nominal
+        • All drones at nominal speed
+        • DT maintains dead-reckoning
+        • No exceptions reported
+    end note
+
+    LossDetected --> CascadingRebalance: Successor perceives gap
+
+    state CascadingRebalance {
+        [*] --> Accelerating: Speedup propagates backward
+        Accelerating --> CheckSufficiency: Cascade settles
+        note right of Accelerating
+            Gap-closing cascade:
+            • Each drone accelerates
+            • Propagates backward
+            • Shortens intrusion window
+        end note
+    }
+
+    CheckSufficiency --> Nominal: Sufficient redundancy
+    CheckSufficiency --> StageSpare: Insufficient redundancy
+
+    state StageSpare {
+        [*] --> DTPredictive: DT simulates fleet response
+        DTPredictive --> InsertionPoint: Compute gap midpoint
+        InsertionPoint --> SpareEnRoute: Spare navigates waypoint
+        note right of SpareEnRoute
+            DT Decision Logic:
+            • Density threshold: σ²_ρ > σ²_max?
+            • Coverage degradation: C_min < C_critical?
+            • Cascading loss: n < n_min?
+        end note
+    }
+
+    SpareEnRoute --> JoiningPhase: Spare arrives
+
+    state JoiningPhase {
+        [*] --> STATE0: Enter STATE 0 bidirectional
+        STATE0 --> LocalStabilization: Sense both neighbors
+        LocalStabilization --> WaitForSettle: Check cascade settled
+        WaitForSettle --> STATE0: Not settled - remain STATE 0
+        WaitForSettle --> AtomicTransition: Settled - transition mode
+        AtomicTransition --> NominalTransition: Switch to STATE NOMINAL
+        note right of STATE0
+            STATE 0 Joining:
+            • Bidirectional awareness
+            • Maintains d_pre ≈ d_succ ≈ d_nom
+            • NO acceleration on loss
+            • Prevents reverse cascade
+        end note
+    }
+
+    NominalTransition --> Restored: Absorbed by fleet
+
+    Restored --> Nominal: Fleet restabilized
+
+    Nominal --> MissionContinue: Coverage maintained
+    MissionContinue --> Nominal: Ongoing patrol
+
+    Nominal --> MissionEnd: Mission termination
+
+    Nominal --> LossDetected: Detect next loss
+
+    state err <<end>>
+    MissionEnd --> err: End
+
+    note right of CascadingRebalance
+        Transitory Cascade Phase:
+        Speed-autonomy trade-off:
+        • High sensing density - fast settle
+        • Low sensing density - sustained elevation
+    end note
+
+    note right of JoiningPhase
+        Multi-Mode Stability:
+        • Consecutive loss during STATE 0?
+        • Multiple spare insertions?
+        • Random loss/insertion timing?
+        → DT validates all interleavings
+    end note

@@ -1,0 +1,58 @@
+\documentclass[conference]{IEEEtran}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage{tabularx}
+\usepackage[english]{babel}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx} 
+\usepackage{textcomp} % provides \textdegree in pdfTeX/OT1
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{cite}
+\usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+\usepackage{float}
+\usepackage{rotating}
+\usepackage{multirow}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning}
+\geometry{margin=1in}
+
+% Robust degree symbol (fallback if \textdegree is not defined)
+\providecommand{\textdegree}{\ensuremath{^{\circ}}}
+
+% Title options (commented for future revision):
+% Original: Problem Statement: Resilient Intrusion Detection Using Circulating Drone Networks
+% 1) Resilient Perimeter Intrusion Detection with Circulating Drone Networks
+% 2) Resilient Intrusion Detection via Circulating Drone Networks under Asymmetric Communications
+% 3) Hybrid Digital-Physical Twin for Resilient Intrusion Detection with Circulating Drone Fleets
+% 4) Distributed Density Control for Resilient Perimeter Surveillance with Circulating Drones
+% 5) Layered Resilience for Perimeter Surveillance: PT/DT Architecture with Circulating Drones (current)
+% 6) Furtive, Autonomous Perimeter Surveillance with Circulating Drone Networks
+\title{Layered Resilience for Perimeter Surveillance: PT/DT Architecture with Circulating Drones}
+\author{\IEEEauthorblockN{Loïc Lagadec$^{\alpha}$,  Loïc Plassart$^\alpha$, Jannik Laval$^\beta$,Ciprian Teodorov$^\alpha$, Charbel Aoun$^\gamma$}
+\IEEEauthorblockA{$^\alpha$ ENSTA, IPP, Lab-STICC, UMR CNRS 6285, France\\
+$^\beta$ Université Lumière Lyon 2, INSA Lyon, Universite Claude Bernard Lyon 1, DISP UR4570, Lyon, France\\
+$^\gamma$ ICAM, IoT engineering for Industry 5.0 group, France\\
+\{loic.lagadec, loic.plassart, ciprian.teodorov \}@ensta.fr, jannik.laval@univ-lyon2.fr, charbel.aoun@icam.fr}
+}
+\date{January 2026}
+
+\begin{document}
+
+\maketitle
+\input{Abstract.tex}
+\input{introduction.tex}
+%\input{System_configuration.tex}
+\input{Architectural_design.tex}
+\input{solution_framework.tex}
+\input{methodology.tex}
+\input{scalability_section.tex}
+\input{discussion_future_work.tex}
+%\input{Results.tex}
+%\input{Conclusion}
+\bibliographystyle{IEEEtran}
+\bibliography{bib}
+\end{document}
